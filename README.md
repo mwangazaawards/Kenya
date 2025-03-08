@@ -71,3 +71,63 @@ class Vote(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     artist_id = db.Column(db.Integer, db.ForeignKey('artist.id'), nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+from flask import Blueprint, render_template, redirect, url_for, flash, request
+from flask_login import login_user, logout_user, login_required, current_user
+from app.models import User, Artist, Vote
+from app import db
+
+main = Blueprint('main', __name__)
+auth = Blueprint('auth', __name__)
+admin = Blueprint('admin', __name__)
+
+@main.route('/')
+def home():
+    artists = Artist.query.all()
+    return render_template('home.html', artists=artists)
+
+@auth.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        user = User.query.filter_by(email=request.form.get('email')).first()
+        if user and user.check_password(request.form.get('password')):
+            login_user(user)
+            return redirect(url_for('main.home'))
+        flash('Invalid email or password')
+    return render_template('login.html')
+
+@auth.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        user = User(
+            username=request.form.get('username'),
+            email=request.form.get('email')
+        )
+        user.set_password(request.form.get('password'))
+        db.session.add(user)
+        db.session.commit()
+        return redirect(url_for('auth.login'))
+    return render_template('register.html')
+
+@auth.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('main.home'))
+
+@main.route('/vote/<int:artist_id>', methods=['POST'])
+@login_required
+def vote(artist_id):
+    vote = Vote(user_id=current_user.id, artist_id=artist_id)
+    db.session.add(vote)
+    db.session.commit()
+    flash('Vote recorded successfully!')
+    return redirect(url_for('main.home'))
+
+@admin.route('/dashboard')
+@login_required
+def dashboard():
+    if not current_user.is_admin:
+        return redirect(url_for('main.home'))
+    artists = Artist.query.all()
+    votes = Vote.query.all()
+    return render_template('admin/dashboard.html', artists=artists, votes=votes)
